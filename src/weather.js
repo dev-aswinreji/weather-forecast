@@ -1,55 +1,68 @@
 import axios from "axios";
 import dotenv from "dotenv";
+import express from 'express';
 
 dotenv.config();
 
 const apiKey = process.env.API_KEY;
+const app = express();
 
-const cityName = "Kottayam";
+app.set('view engine','ejs');
+app.use(express.urlencoded({extended:true}));
+app.use(express.json());
+app.get('/weather',(req,res)=>{
+  res.render('weather');
+});
 
-const apiUrl = `http://api.openweathermap.org/data/2.5/find?q=${cityName}&appid=${apiKey}`;
+app.post('/weather', async (req,res)=>{
+  const cityName = req.body.cityName;
+  console.log(cityName);
 
-async function cityId() {
+  if(cityName){
+    try {
+      const cityId = await getCityId(cityName);
+      console.log(cityId, 'City ID');
+      if (cityId) {
+        const weatherData = await getWeather(cityId);
+        console.log(weatherData, 'Weather Data');
+        res.json({ response: weatherData });
+      } else {
+        res.status(404).json({ error: 'City not found' });
+      }
+    } catch (error) {
+      console.error('Error:', error);
+      res.status(500).json({ error: 'Internal Server Error' });
+    }
+  } else {
+    res.status(400).json({ error: 'City name is required' });
+  }
+});
+
+async function getCityId(cityName) {
   try {
-    return await fetch(apiUrl)
-      .then((response) => response.json())
-      .then((data) => {
-        const cityId = data.list[0].id;
-        return cityId;
-      })
-      .catch((err) => console.log(err, "some error ouccreed while fetching"));
+    const response = await axios.get(`http://api.openweathermap.org/data/2.5/find?q=${cityName}&appid=${apiKey}`);
+    return response.data.list[0]?.id;
   } catch (error) {
-    console.log(error, "fetching city id has some errors");
+    console.error('Error fetching city ID:', error);
+    throw error;
   }
 }
 
-async function getWeather() {
+async function getWeather(cityId) {
   try {
-    const cityIdUsingFetch = await cityId();
-
-    const response = await axios.get(
-      `http://api.openweathermap.org/data/2.5/forecast?id=${cityIdUsingFetch}&appid=${apiKey}`
-    );
-
-    // Iterate over each forecast entry
-    response.data.list.forEach((forecast) => {
-      // Extract temperature from the forecast and convert to Celsius
+    const response = await axios.get(`http://api.openweathermap.org/data/2.5/forecast?id=${cityId}&appid=${apiKey}`);
+    return response.data.list.map((forecast) => {
       const temperatureKelvin = forecast.main.temp;
       const temperatureCelsius = temperatureKelvin - 273.15;
-
-      // Extract weather conditions from the forecast
-      const weatherConditions = forecast.weather
-        .map((condition) => condition.main)
-        .join(", ");
-
-      // Print temperature in Celsius and weather conditions
-      console.log(`Temperature: ${temperatureCelsius.toFixed(2)} °C`);
-      console.log(`Weather Conditions: ${weatherConditions}`);
+      const weatherConditions = forecast.weather.map((condition) => condition.main).join(", ");
+      return { temperature: temperatureCelsius.toFixed(2), weather: weatherConditions };
     });
   } catch (error) {
-    console.log(error, "Error occured in weather main page");
-    return null;
+    console.error('Error fetching weather data:', error);
+    throw error;
   }
 }
 
-getWeather("new york");
+app.listen(4000, () => {
+  console.log('http://localhost:4000/weather');
+});
